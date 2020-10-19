@@ -5,8 +5,8 @@ namespace W7\Tests;
 
 use Illuminate\Filesystem\Filesystem;
 use W7\App\Handler\Log\TestHandler;
-use W7\Core\Log\Handler\BufferHandler;
 use W7\Core\Log\Handler\StreamHandler;
+use W7\Core\Log\LogBuffer;
 use W7\Core\Log\Logger;
 use W7\Core\Log\LogManager;
 
@@ -77,24 +77,25 @@ class LoggerTest extends TestCase {
 	public function testBuffer() {
 		$this->clearLog();
 		/**
-		 * @var BufferHandler $handler
+		 * @var LogBuffer $handler
 		 */
-		ilogger()->bufferLimit = 5;
-		$handler = ilogger()->getHandlers()[0];
+		$logger = \W7\Core\Facades\Logger::channel();
+		$logger->bufferLimit = 5;
+		$handler = $logger->getHandlers()[0];
 		$handlerReflect = new \ReflectionClass($handler);
 		$property = $handlerReflect->getProperty('bufferLimit');
 		$property->setAccessible(true);
 		$property->setValue($handler, 5);
 
-		ilogger()->debug('test');
-		ilogger()->debug('test');
-		ilogger()->debug('test');
-		ilogger()->debug('test');
-		ilogger()->debug('test');
+		$logger->debug('test');
+		$logger->debug('test');
+		$logger->debug('test');
+		$logger->debug('test');
+		$logger->debug('test');
 		$files = glob(RUNTIME_PATH . '/logs/w7-*.log');
 		$this->assertSame(false, count($files) > 0);
 
-		ilogger()->debug('test');
+		$logger->debug('test');
 		$files = glob(RUNTIME_PATH . '/logs/w7-*.log');
 		$this->assertSame(true, count($files) > 0);
 
@@ -105,7 +106,7 @@ class LoggerTest extends TestCase {
 		$filesystem = new Filesystem();
 		$filesystem->copyDirectory(__DIR__ . '/Util/Handler/Log', APP_PATH . '/Handler/Log');
 
-		$handler = new BufferHandler(new TestHandler(), 1, Logger::DEBUG, true, true);
+		$handler = new LogBuffer(new TestHandler(), 1, Logger::DEBUG, true, true);
 		ilogger()->setHandlers([$handler]);
 		ob_start();
 		ilogger()->debug('test');
@@ -117,73 +118,21 @@ class LoggerTest extends TestCase {
 	}
 
 	public function testDestructFlushLog() {
-		$this->clearLog();
+		@unlink(RUNTIME_PATH . '/flush.log');
 
 		$logger = new Logger('flush', [
-			new BufferHandler(StreamHandler::getHandler([
-				'path' => RUNTIME_PATH . DS. 'logs'. DS. 'flush.log',
-				'level' => 'debug',
+			new LogBuffer(StreamHandler::getHandler([
+				'path' => RUNTIME_PATH . '/flush.log',
+				'level' => Logger::DEBUG,
 			]), 2)
 		]);
 		$logger->bufferLimit = 2;
 
 		$logger->debug('flush');
-		$this->assertSame(false, file_exists(RUNTIME_PATH . DS. 'logs'. DS. 'flush.log'));
+		$this->assertSame(false, file_exists(RUNTIME_PATH . '/flush.log'));
 
 		unset($logger);
-		$this->assertSame(true, file_exists(RUNTIME_PATH . DS. 'logs'. DS. 'flush.log'));
-		$this->clearLog();
-	}
-
-	public function testAddChannelWithDebug() {
-		$this->clearLog();
-		/**
-		 * @var LogManager $logManager
-		 */
-		$logManager = iloader()->get(LogManager::class);
-
-		$this->assertSame(true, empty($logManager->getConfig()['channel']['debug']));
-
-		$logManager->addChannel('debug', 'stream', [
-			'path' => RUNTIME_PATH . '/logs/test.log',
-			'level' => 'debug'
-		]);
-
-		$this->assertSame(false, empty($logManager->getConfig()['channel']['debug']));
-		$this->assertSame('stream', $logManager->getConfig()['channel']['database']['driver']);
-
-		ilogger()->channel('debug')->debug('test');
-
-		$this->assertSame(true, file_exists(RUNTIME_PATH . '/logs/test.log'));
-
-		$this->clearLog();
-	}
-
-	public function testAddChannelWithInfo() {
-		$this->clearLog();
-		/**
-		 * @var LogManager $logManager
-		 */
-		$logManager = iloader()->get(LogManager::class);
-
-		$this->assertSame(true, empty($logManager->getConfig()['channel']['test']));
-
-		$logManager->addChannel('test', 'stream', [
-			'path' => RUNTIME_PATH . '/logs/test.log',
-			'level' => 'info'
-		]);
-
-		$this->assertSame(false, empty($logManager->getConfig()['channel']['test']));
-		$this->assertSame('stream', $logManager->getConfig()['channel']['database']['driver']);
-
-		ilogger()->channel('test')->debug('test');
-
-		$this->assertSame(false, file_exists(RUNTIME_PATH . '/logs/test.log'));
-
-		ilogger()->channel('test')->info('test');
-
-		$this->assertSame(true, file_exists(RUNTIME_PATH . '/logs/test.log'));
-
-		$this->clearLog();
+		$this->assertSame(true, file_exists(RUNTIME_PATH . '/flush.log'));
+		unlink(RUNTIME_PATH . '/flush.log');
 	}
 }

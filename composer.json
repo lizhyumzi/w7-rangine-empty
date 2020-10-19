@@ -34,10 +34,12 @@
 		}
 	},
 	"require": {
-		"w7/rangine": "~2.0",
-		"w7/rangine-crontab": "~1.0"
+		"w7/rangine": "*",
+		"w7/rangine-mq": "*",
+		"w7/rangine-crontab": "*"
 	},
 	"require-dev": {
+		"w7/rangine-debugger": "*",
 		"phpunit/phpunit": "^7.0"
 	}
 }

@@ -8,13 +8,31 @@ namespace W7\Tests;
 
 
 use FastRoute\Dispatcher\GroupCountBased;
+use W7\App;
 use W7\App\Middleware\GatewayCheckSiteMiddleware;
-use W7\Core\Route\Route;
+use W7\Core\Exception\RouteNotAllowException;
+use W7\Core\Exception\RouteNotFoundException;
+use W7\Core\Helper\FileLoader;
+use W7\Core\Middleware\MiddlewareAbstract;
+use W7\Core\Route\RouteDispatcher;
+use W7\Core\Route\Router;
 use W7\Core\Route\RouteMapping;
+use W7\Http\Message\Server\Request;
+use W7\Http\Message\Server\Response;
+use W7\Http\Server\Dispatcher;
+use W7\Http\Server\Server;
+
+class TestMiddleware extends MiddlewareAbstract {
+
+}
+
+class Test1Middleware extends MiddlewareAbstract {
+
+}
 
 class RouteConfigTest extends TestCase {
 	public function testFuncAdd() {
-		$routeMapping = new RouteMapping();
+		$routeMapping = new RouteMapping(\W7\Core\Facades\Router::getFacadeRoot(), new FileLoader());
 		$routeMapping->setRouteConfig([$this->getConfig()]);
 		$routeMapping->getMapping();
 
@@ -22,34 +40,34 @@ class RouteConfigTest extends TestCase {
 		irouter()->name('user1')->middleware('AppCheckMiddleware')->get('/user/{name}', function () {return '/user/{name}';});
 		irouter()->post('/user/get', function () {return '/user';});
 
-		irouter()->middleware('AppCheckMiddleware')->name('test2')->group('/module1', function (Route $route) {
+		irouter()->middleware('AppCheckMiddleware')->name('test2')->group('/module1', function (Router $route) {
 			$route->post('/info', function () {return '/module1/info';});
 			$route->name('test-colsure')->post('/build', function () {return '/module1/build';});
 		});
 
-		irouter()->name('test3')->group('/module3', function (Route $route) {
+		irouter()->name('test3')->group('/module3', function (Router $route) {
 			$route->post('/info', 'Module\BuildController@info');
 			$route->name('test-build')->post('/build', 'Module\BuildController@build');
 		});
 
-		irouter()->name('group-name')->middleware(['AppCheckMiddleware', 'GatewayCheckSiteMiddleware'])->group('/module2', function (Route $route) {
+		irouter()->name('group-name')->middleware(['AppCheckMiddleware', 'GatewayCheckSiteMiddleware'])->group('/module2', function (Router $route) {
 			$route->get('/info', function () {return '/module2/info';});
 			$route->get('/info1', 'Module\InfoController@build');
 			$route->name('test-info1')->get('/info2', 'Module\InfoController@build');
 			$route->options('/info', function () {return '/module2/build';});
-			$route->name('test4')->group('/module3', function (Route $route) {
+			$route->name('test4')->group('/module3', function (Router $route) {
 				$route->post('/info', 'Module\InfoController@info');
 				$route->name('test-build')->post('/build', 'Module\InfoController@build');
 				$route->name('test-handle')->post('/handle', function () {return 'Module\InfoController@build';});
 				$route->post('/handle1', function () {return 'Module\InfoController@build';});
 
-				$route->middleware('CheckAccessTokenMiddleware')->name('test5')->group('/module4', function (Route $route) {
+				$route->middleware('CheckAccessTokenMiddleware')->name('test5')->group('/module4', function (Router $route) {
 					$route->post('/info', 'Module\InfoController@info');
 					$route->name('test-build')->post('/build', 'Module\InfoController@build');
 					$route->name('test-handle')->post('/handle', function () {return 'Module\InfoController@build';});
 					$route->post('/handle1', function () {return 'Module\InfoController@build';});
 				});
-				$route->group('/module5', function (Route $route) {
+				$route->group('/module5', function (Router $route) {
 					$route->name('test-info')->post('/info/{info}', 'Module\InfoController@info');
 					$route->post('/info1/{info}', 'Module\InfoController@info');
 					$route->name('test-build')->post('/build', 'Module\InfoController@build');
@@ -147,15 +165,15 @@ class RouteConfigTest extends TestCase {
 	}
 
 	public function testGroup() {
-		irouter()->middleware('GatewayCheckSiteMiddleware')->group('/app', function (\W7\Core\Route\Route $route) {
-			$route->name('resource-test')->group('/module', function (\W7\Core\Route\Route $route) {
+		irouter()->middleware('GatewayCheckSiteMiddleware')->group('/app', function (\W7\Core\Route\Router $route) {
+			$route->name('resource-test')->group('/module', function (\W7\Core\Route\Router $route) {
 				$route->get('/info/index', 'Module\InfoController@index');
-				$route->middleware('CheckUrlIsBlackListMiddleware')->group('/info', function (\W7\Core\Route\Route $route) {
+				$route->middleware('CheckUrlIsBlackListMiddleware')->group('/info', function (\W7\Core\Route\Router $route) {
 					$route->get('/test1/index', 'Module\QueryController@index');
 					$route->apiResource('test', 'Module\SettingController');
 				});
 			});
-			$route->group('/module1', function (\W7\Core\Route\Route $route) {
+			$route->group('/module1', function (\W7\Core\Route\Router $route) {
 				$route->get('/info1/index1', 'Module\SettingController@index');
 			});
 		});
@@ -242,5 +260,164 @@ class RouteConfigTest extends TestCase {
 		} catch (\Throwable $e) {
 			$this->assertSame('route "/multi" for method "GET" exists in system', $e->getMessage());
 		}
+	}
+
+	public function testNotFound() {
+		$routeMapping = new RouteMapping(\W7\Core\Facades\Router::getFacadeRoot(), new FileLoader());
+		$routeInfo = $routeMapping->getMapping();
+		$router = new RouteDispatcher($routeInfo);
+		$dispatcher = new Dispatcher();
+		$dispatcher->setRouterDispatcher($router);
+
+		App::$server = new Server();
+		$request = new Request('POST', '/post');
+		$response = new Response();
+		icontext()->setResponse($response);
+
+		$reflect = new \ReflectionClass($dispatcher);
+		$method = $reflect->getMethod('getRoute');
+		$method->setAccessible(true);
+
+		try {
+			$method->invoke($dispatcher, $request);
+		} catch (\Throwable $e) {
+			$this->assertSame(true, $e instanceof RouteNotFoundException);
+			$this->assertSame('{"error":"Route not found, \/post"}', $e->getMessage());
+		}
+	}
+
+	public function testNotAllow() {
+		$routeMapping = new RouteMapping(\W7\Core\Facades\Router::getFacadeRoot(), new FileLoader());
+		$router = new RouteDispatcher($routeMapping->getMapping());
+		$dispatcher = new Dispatcher();
+		$dispatcher->setRouterDispatcher($router);
+
+		App::$server = new Server();
+		$request = new Request('POST', '/favicon.ico');
+		$response = new Response();
+		icontext()->setResponse($response);
+
+		$reflect = new \ReflectionClass($dispatcher);
+		$method = $reflect->getMethod('getRoute');
+		$method->setAccessible(true);
+
+		try {
+			$method->invoke($dispatcher, $request);
+		} catch (\Throwable $e) {
+			$this->assertSame(true, $e instanceof RouteNotAllowException);
+			$this->assertSame('{"error":"Route not allowed, \/favicon.ico"}', $e->getMessage());
+		}
+	}
+
+	public function testFix() {
+		$routeMapping = new RouteMapping(new Router(), new FileLoader());
+		$routeMapping->setRouteConfig([$this->getFixConfig()]);
+		$dispatch = new GroupCountBased($routeMapping->getMapping());
+
+		$this->assertSame('test-name', $dispatch->dispatch('GET', '/jsdata/app/hot')[1]['name']);
+		$this->assertSame('conf-test.large', $dispatch->dispatch('GET', '/jsdata/app/test-large')[1]['name']);
+		$this->assertSame('top', $dispatch->dispatch('GET', '/jsdata/popularize/top')[1]['name']);
+		$this->assertSame(1, $dispatch->dispatch('GET', '/p-js/test/a')[1]['name']);
+		$this->assertSame('W7\App\Middleware\W7\Tests\Test1Middleware', $dispatch->dispatch('GET', '/p-js/test/a')[1]['middleware']['before'][0][0]);
+		$this->assertSame('b', $dispatch->dispatch('GET', '/p-js/test/b')[1]['name']);
+		$this->assertSame('c', $dispatch->dispatch('GET', '/p-js/test/c')[1]['name']);
+		$this->assertSame(1, $dispatch->dispatch('GET', '/p-js/test1/a')[1]['name']);
+		$this->assertSame(1, $dispatch->dispatch('POST', '/p-js/test1/a')[1]['name']);
+		$this->assertSame('b', $dispatch->dispatch('GET', '/p-js/test1/b')[1]['name']);
+		$this->assertSame('W7\App\Middleware\W7\Tests\TestMiddleware', $dispatch->dispatch('GET', '/p-js/test1/b')[1]['middleware']['before'][1][0]);
+		$this->assertSame('c1', $dispatch->dispatch('GET', '/p-js/test1/p-c/c1')[1]['name']);
+		$this->assertSame(1, $dispatch->dispatch('GET', '/p-js/test-2/a')[1]['name']);
+		$this->assertSame(1, $dispatch->dispatch('POST', '/p-js/test-2/a')[1]['name']);
+		$this->assertSame('W7\App\Middleware\W7\Tests\TestMiddleware', $dispatch->dispatch('POST', '/p-js/test-2/a')[1]['middleware']['before'][1][0]);
+		$this->assertSame('test-2.b', $dispatch->dispatch('GET', '/p-js/test-2/b')[1]['name']);
+		$this->assertSame('test-2.c1', $dispatch->dispatch('GET', '/p-js/test-2/p-c/c1')[1]['name']);
+	}
+
+	private function getFixConfig() {
+		return [
+			'method' => 'GET',
+			'middleware' => [Test1Middleware::class],
+			'jsdata' => [
+				'middleware' => 'AppCheckMiddleware',
+				'app' => [
+					//热门应用
+					'name' => 'conf-test',
+					'hot' => [
+						'name' => 'test-name',
+						'uri' => '/jsdata/app/hot[/{limit:\d+}]',
+						'handler' => 'Jsdata\AppController@hot',
+					],
+					//大应用
+					'large' => [
+						'prefix' => '/test-large',
+						'middleware' => [TestMiddleware::class],
+						'handler' => 'Jsdata\AppController@large',
+					]
+				],
+				'popularize' => [
+					'top' => [],
+					'bottom' => [],
+					'ads' => [],
+				]
+			],
+			'js' => [
+				'prefix' => 'p-js',
+				'test' => [
+					'a' => [
+						'name' => 1
+					],
+					'b' => [
+						'middleware' => [TestMiddleware::class]
+					],
+					'c' => []
+				],
+				'test1' => [
+					'a' => [
+						'method' => 'GET, POST',
+						'name' => 1
+					],
+					'b' => [
+						'middleware' => [TestMiddleware::class]
+					],
+					'c' => [
+						'prefix' => 'p-c',
+						'c1' => []
+					]
+				],
+				'test2' => [
+					'prefix' => 'test-2',
+					'name' => 'test-2',
+					'middleware' => [TestMiddleware::class],
+					'a' => [
+						'method' => 'GET, POST',
+						'name' => 1
+					],
+					'b' => [
+
+					],
+					'c' => [
+						'prefix' => 'p-c',
+						'c1' => []
+					]
+				]
+			]
+		];
+	}
+
+	public function testStaticRoute() {
+		try{
+			irouter()->get('/static', 'static/index.html');
+		} catch (\Throwable $e) {
+			$this->assertSame('route handler static/index.html error', $e->getMessage());
+		}
+
+		irouter()->get('/static', 'index.html');
+
+		$routeInfo = (new RouteMapping(\W7\Core\Facades\Router::getFacadeRoot(), new FileLoader()))->getMapping();
+		$router = new GroupCountBased($routeInfo);
+		$route = $router->dispatch('GET', '/static');
+
+		$this->assertSame(true, $route[1]['handler'][0] == '\W7\Core\Controller\StaticResourceController');
+		$this->assertSame('/static', $route[1]['uri']);
 	}
 }

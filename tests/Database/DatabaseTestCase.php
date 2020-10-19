@@ -1,10 +1,11 @@
 <?php
 
-namespace W7\Tests\Future\Database;
+namespace W7\Tests\Database;
 
 use Illuminate\Database\Connection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\SQLiteConnection;
+use W7\Core\Facades\DB;
 use W7\Tests\TestCase;
 
 class SQLite3Connection extends SQLiteConnection {
@@ -29,7 +30,7 @@ class SQLite3Connection extends SQLiteConnection {
 }
 
 class DatabaseTestCase extends TestCase {
-	private function registerSqlite() {
+	protected function registerSqlite() {
 		Connection::resolverFor('sqlite', function ($connection, $database, $prefix, $config) {
 			return new SQLite3Connection($connection, $database, $prefix, $config);
 		});
@@ -59,6 +60,7 @@ class DatabaseTestCase extends TestCase {
 
 	public function setUp(): void {
 		parent::setUp();
+		DB::$resolvedInstance = [];
 		$this->registerSqlite();
 	}
 }

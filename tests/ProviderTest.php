@@ -3,8 +3,11 @@
 namespace W7\Tests;
 
 use FastRoute\Dispatcher\GroupCountBased;
+use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Console\Input\ArgvInput;
 use W7\Console\Application;
+use W7\Core\Facades\Router;
+use W7\Core\Helper\FileLoader;
 use W7\Core\Provider\ProviderAbstract;
 use W7\Core\Provider\ProviderManager;
 use W7\Core\Route\RouteMapping;
@@ -21,8 +24,8 @@ class RouteProvider extends ProviderAbstract {
 		/**
 		 * 加载该扩展包的路由
 		 */
-		$this->rootPath = BASE_PATH . '/';
-		$this->registerRoute('route.php');
+		$this->rootPath = __DIR__ . '/Util/Provider';
+		$this->registerRoute('../route.php');
 	}
 }
 
@@ -46,7 +49,7 @@ class ConfigProvider extends ProviderAbstract {
 class CommandProvider extends ProviderAbstract {
 	public function register() {
 		$this->rootPath = APP_PATH ;
-		$this->namespace = 'W7\App\src';
+		$this->packageNamespace = 'W7\App\src';
 		$this->registerCommand();
 	}
 }
@@ -68,17 +71,15 @@ class ProviderTest extends TestCase {
 		$command = $application->get('make:provider');
 		$command->run(new ArgvInput([
 			'input',
-			'--name=test'
+			'--name=test1'
 		]), ioutputer());
 
-		$this->assertSame(true, file_exists(APP_PATH . '/Provider/TestProvider.php'));
+		$this->assertSame(true, file_exists(APP_PATH . '/Provider/Test1Provider.php'));
 
-		unlink(APP_PATH . '/Provider/TestProvider.php');
-		rmdir(APP_PATH . '/Provider');
+		unlink(APP_PATH . '/Provider/Test1Provider.php');
 	}
 
 	public function testRoute() {
-		file_put_contents(BASE_PATH . '/route/route.php', file_get_contents(__DIR__ . '/Util/Provider/route.php'));
 		/**
 		 * @var ProviderManager $providerManager
 		 */
@@ -86,15 +87,14 @@ class ProviderTest extends TestCase {
 		$providerManager->registerProvider(RouteProvider::class, 'test');
 
 		//route
-		$routeMapping = iloader()->singleton(RouteMapping::class);
+		$routeMapping = new RouteMapping(Router::getFacadeRoot(), new FileLoader());
 		$routeMapping->getMapping();
 		$routeInfo = irouter()->getData();
 		$dispatch = new GroupCountBased($routeInfo);
 		$result = $dispatch->dispatch('POST', '/module1/setting/save1');
-		$this->assertSame('save1', $result[1]['name']);
-		$this->assertStringContainsString("\\Vendor\\Test\\", $result[1]['handler'][0]);
 
-		unlink(BASE_PATH . '/route/route.php');
+		$this->assertSame('test.save1', $result[1]['name']);
+		$this->assertStringContainsString("\\Vendor\\Test\\", $result[1]['handler'][0]);
 	}
 
 	public function testConfig() {
@@ -165,18 +165,5 @@ class ProviderTest extends TestCase {
 
 		$content = iloader()->singleton(View::class)->render('@provider/index');
 		$this->assertSame('ok', $content);
-	}
-
-	public function testAutoFind() {
-		$providerManager = new ProviderManager();
-		$providers = $providerManager->autoFindProviders(__DIR__ . '/Util/Provider', 'W7\Test');
-
-		$this->assertSame(true, file_exists(__DIR__ . '/Util/Provider/Provider.php'));
-		$this->assertSame(true, file_exists(__DIR__ . '/Util/Provider/TestProvider.php'));
-		$this->assertSame(true, file_exists(__DIR__ . '/Util/Provider/ProviderTest.php'));
-
-		$this->assertSame(1, count($providers));
-		$this->assertSame('W7\Test\TestProvider', array_keys($providers)[0]);
-		$this->assertSame('W7\Test\TestProvider', $providers['W7\Test\TestProvider']);
 	}
 }

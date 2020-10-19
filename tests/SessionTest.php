@@ -27,15 +27,13 @@ class SessionTest extends TestCase {
 
 	public function testGc() {
 		session_reset();
-		$config = iconfig()->getUserConfig('app');
-		$config['session'] = [
+		$config = [
 			'gc_divisor' => 1,
 			'gc_probability' => 1,
 			'expires' => 1
 		];
-		iconfig()->setUserConfig('app', $config);
 
-		$session = new Session();
+		$session = new Session($config);
 		$sessionReflect = new \ReflectionClass($session);
 		$property = $sessionReflect->getProperty('handler');
 		$property->setAccessible(true);
@@ -60,10 +58,9 @@ class SessionTest extends TestCase {
 		$filesystem->copyDirectory(__DIR__ . '/Util/Handler/Session', APP_PATH . '/Handler/Session');
 
 		$config = iconfig()->getUserConfig('app');
-		$config['session']['handler'] = 'test';
-		iconfig()->setUserConfig('app', $config);
+		$config['session']['handler'] = TestHandler::class;
 
-		$session = new Session();
+		$session = new Session($config['session']);
 		$sessionReflect = new \ReflectionClass($session);
 		$property = $sessionReflect->getProperty('handler');
 		$property->setAccessible(true);
@@ -78,6 +75,36 @@ class SessionTest extends TestCase {
 		$handler = $property->getValue($session);
 		$this->assertSame(true, $handler instanceof TestHandler);
 
-		$filesystem->deleteDirectory(APP_PATH . '/Handler/Session');
+		$filesystem->delete(APP_PATH . '/Handler/Session/TestHandler.php');
+	}
+
+	public function testHas() {
+		$session = new Session();
+		$session->start(new Request('GET', '/'));
+		$session->set('test', 1);
+
+		$this->assertSame(true, $session->has('test'));
+		$this->assertSame(false, $session->has('test1'));
+	}
+
+	public function testAll() {
+		$session = new Session();
+		$session->start(new Request('GET', '/'));
+		$session->set('test', 1);
+		$session->set('test1', 2);
+
+		$data = $session->all();
+
+		$this->assertSame(1, $data['test']);
+		$this->assertSame(2, $data['test1']);
+	}
+
+	public function testSetSessionId() {
+		$session = new Session();
+		$session->start(new Request('GET', '/'));
+		$id = 1234;
+		$session->setId($id);
+
+		$this->assertSame(1234, $session->getId());
 	}
 }
